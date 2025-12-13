@@ -5,7 +5,8 @@ DB_PATH = "smarthire.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Stores the overall Job (e.g., "Senior Python Dev")
+    
+    # Create jobs table
     c.execute('''CREATE TABLE IF NOT EXISTS jobs 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   title TEXT, 
@@ -14,7 +15,7 @@ def init_db():
                   total_files INTEGER DEFAULT 0,
                   processed_files INTEGER DEFAULT 0)''')
     
-    # Stores the Candidates
+    # Create candidates table
     c.execute('''CREATE TABLE IF NOT EXISTS candidates 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   job_id INTEGER, 
@@ -22,5 +23,13 @@ def init_db():
                   score REAL, 
                   missing_skills TEXT, 
                   is_shortlisted BOOLEAN)''')
+    
+    # Check if found_skills column exists, if not add it
+    try:
+        c.execute("SELECT found_skills FROM candidates LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        c.execute("ALTER TABLE candidates ADD COLUMN found_skills TEXT")
+    
     conn.commit()
     conn.close()
