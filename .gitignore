@@ -1,0 +1,6 @@
+# Python virtual environment
+.venv/
+
+# Other files to ignore from your file structure
+__pycache__/
+*.db
