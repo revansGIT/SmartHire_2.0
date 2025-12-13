@@ -38,33 +38,62 @@ def extract_text(filepath):
     try:
         text = ""
         if filepath.endswith('.pdf'):
-            with pdfplumber.open(filepath) as pdf:
-                text = " ".join([p.extract_text() or "" for p in pdf.pages])
+            try:
+                with pdfplumber.open(filepath) as pdf:
+                    text = " ".join([p.extract_text() or "" for p in pdf.pages])
+            except Exception as pdf_error:
+                print(f"PDF extraction failed for {filepath}: {pdf_error}")
+                # Try alternative extraction method
+                try:
+                    import PyPDF2
+                    with open(filepath, 'rb') as f:
+                        reader = PyPDF2.PdfReader(f)
+                        text = " ".join([page.extract_text() or "" for page in reader.pages])
+                except:
+                    text = ""
+                    
         elif filepath.endswith('.docx'):
             doc = docx.Document(filepath)
             text = " ".join([p.text for p in doc.paragraphs])
         elif filepath.endswith('.txt'):
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 text = f.read()
-        return text.lower()
+        
+        return text.lower() if text else ""
     except Exception as e:
         print(f"Error extracting {filepath}: {e}")
         return ""
 
 def score_candidate(job_desc, resume_text, must_haves):
+    # Don't immediately fail if missing one must-have
+    missing_critical = []
+    
     if must_haves:
         for skill in must_haves:
             if skill.strip().lower() not in resume_text:
-                return 0.0, [skill.strip()]
+                missing_critical.append(skill.strip())
     
+    # Calculate base score
     vectors = TfidfVectorizer().fit_transform([job_desc, resume_text])
     cosine_sim = cosine_similarity(vectors)[0][1] * 100
     
-    doc = nlp(resume_text)
-    found_skills = {token.text for token in doc if token.text in SKILLS}
+    # Count found skills
+    found_skills = set()
+    for skill in SKILLS:
+        if skill.lower() in resume_text:
+            found_skills.add(skill)
     
-    final_score = (cosine_sim * 0.6) + (len(found_skills) * 2)
-    return round(final_score, 2), []
+    # Calculate final score with penalty for missing critical skills
+    base_score = (cosine_sim * 0.6) + (len(found_skills) * 2)
+    
+    # Penalty for missing critical skills (but not zero)
+    if missing_critical:
+        penalty = len(missing_critical) * 20  # 20 points per missing critical skill
+        final_score = max(0, base_score - penalty)  # Don't go below 0
+    else:
+        final_score = base_score
+    
+    return round(final_score, 2), missing_critical
 
 # --- 2. The Background Worker (Updated) ---
 def process_job_thread(job_id, job_desc, cv_files, must_haves):
@@ -74,17 +103,26 @@ def process_job_thread(job_id, job_desc, cv_files, must_haves):
     processed_count = 0
     total_files = len(cv_files)
     
-    # Update total files count
+    # Log the must_haves
+    print(f"Processing Job {job_id} with must_haves: {must_haves}")
+    
     c.execute("UPDATE jobs SET total_files=? WHERE id=?", (total_files, job_id))
     conn.commit()
+    
+    scores_log = []
     
     for path in cv_files:
         try:
             filename = os.path.basename(path)
             text = extract_text(path)
             
-            if text:
+            if text and len(text) > 50:  # Only process if we got decent text
                 score, missing = score_candidate(job_desc, text, must_haves)
+                
+                # Log first few scores
+                if processed_count < 5:
+                    print(f"Sample CV {filename[:30]}...: Score={score}, Missing={missing}")
+                    scores_log.append((filename, score))
                 
                 if score > 0:
                     c.execute("""INSERT INTO candidates 
@@ -93,15 +131,17 @@ def process_job_thread(job_id, job_desc, cv_files, must_haves):
                               (job_id, filename, score, json.dumps(missing), False))
             
             processed_count += 1
-            # Update progress every 5 files
-            if processed_count % 5 == 0:
+            
+            if processed_count % 10 == 0:
                 c.execute("UPDATE jobs SET processed_files=? WHERE id=?", (processed_count, job_id))
                 conn.commit()
                 
         except Exception as e:
             print(f"Error processing {path}: {e}")
 
-    # Finish
+    print(f"Score samples: {scores_log[:5]}")
+    print(f"Total files with score > 0: {processed_count - len(scores_log)}")
+    
     c.execute("UPDATE jobs SET status='Completed', processed_files=? WHERE id=?", (processed_count, job_id))
     conn.commit()
     conn.close()
