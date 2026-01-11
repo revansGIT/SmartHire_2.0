@@ -2,18 +2,36 @@ import os, json, threading, sqlite3, time, zipfile, re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from contextlib import contextmanager
+from dotenv import load_dotenv
 import pdfplumber, docx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from database import init_db, DB_PATH
 from skills_master import SKILLS, SKILL_CONTEXT_MAP
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
-CORS(app)
+
+# Configuration
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 524288000))  # 500MB default
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+
+# CORS configuration for production
+CORS(app, resources={
+    r"/*": {
+        "origins": [FRONTEND_URL, "http://localhost:3000", "http://localhost:5173"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
+
 init_db()
 
 # Removed unused spacy model loading for performance
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Pre-compile regex patterns for better performance
@@ -427,6 +445,15 @@ def get_job_status(job_id):
     else:
         return jsonify({"error": "Job not found"}), 404
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring and container orchestration"""
+    return jsonify({
+        "status": "healthy",
+        "version": "2.0",
+        "service": "SmartHire Backend"
+    }), 200
+
 if __name__ == '__main__':
     print("Starting SmartHire 2.0 Server...")
     print("Available endpoints:")
@@ -434,4 +461,12 @@ if __name__ == '__main__':
     print("  GET /shortlist/<job_id> - Get top 5 candidates")
     print("  GET /debug/job/<job_id> - Debug all candidates")
     print("  GET /job-status/<job_id> - Check progress")
-    app.run(debug=True, port=5000)
+    print("  GET /health - Health check")
+    print(f"Frontend URL: {FRONTEND_URL}")
+    
+    # Get configuration from environment
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_PORT', 5000))
+    debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+    
+    app.run(debug=debug, host=host, port=port)
