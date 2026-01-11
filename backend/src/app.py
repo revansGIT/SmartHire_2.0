@@ -445,6 +445,15 @@ def get_job_status(job_id):
     else:
         return jsonify({"error": "Job not found"}), 404
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring and container orchestration"""
+    return jsonify({
+        "status": "healthy",
+        "version": "2.0",
+        "service": "SmartHire Backend"
+    }), 200
+
 if __name__ == '__main__':
     print("Starting SmartHire 2.0 Server...")
     print("Available endpoints:")
@@ -452,6 +461,7 @@ if __name__ == '__main__':
     print("  GET /shortlist/<job_id> - Get top 5 candidates")
     print("  GET /debug/job/<job_id> - Debug all candidates")
     print("  GET /job-status/<job_id> - Check progress")
+    print("  GET /health - Health check")
     print(f"Frontend URL: {FRONTEND_URL}")
     
     # Get configuration from environment
