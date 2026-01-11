@@ -186,7 +186,10 @@ def benchmark_scoring_speed():
     
     print(f"\nProcessed {len(resumes)} resumes in {elapsed*1000:.2f}ms")
     print(f"Average time per resume: {avg_time*1000:.2f}ms")
-    print(f"Estimated throughput: {1/avg_time:.1f} resumes/second")
+    if avg_time > 0:
+        print(f"Estimated throughput: {1/avg_time:.1f} resumes/second")
+    else:
+        print(f"Estimated throughput: >10000 resumes/second (extremely fast)")
     
     print("\nScores:")
     for i, (score, skill_count) in enumerate(results):
