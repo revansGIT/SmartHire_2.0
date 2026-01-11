@@ -20,3 +20,15 @@ uploads/
 .idea/
 *.swp
 *.swo
+
+# Node.js / Frontend
+node_modules/
+frontend/dist/
+frontend/build/
+*.log
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.production
