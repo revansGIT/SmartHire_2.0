@@ -4,3 +4,19 @@
 # Other files to ignore from your file structure
 __pycache__/
 *.db
+
+# Python build artifacts
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+
+# Uploads and temporary files
+uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
