@@ -310,7 +310,6 @@ def get_shortlist(job_id):
     
     c.execute("SELECT status, processed_files, total_files FROM jobs WHERE id=?", (job_id,))
     job = c.fetchone()
-    
     # Get top 5 with score > 0
     c.execute("SELECT * FROM candidates WHERE job_id=? AND score > 0 ORDER BY score DESC LIMIT 5", (job_id,))
     candidates = [dict(row) for row in c.fetchall()]
