@@ -8,7 +8,6 @@ A production-ready web application that uses AI and machine learning to automati
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## ✨ Features
-
 - **🚀 High Performance**: Processes ~890 resumes per second (8.9x faster than baseline)
 - **🎯 Smart Matching**: Uses TF-IDF and cosine similarity for intelligent resume ranking
 - **💼 Skill Analysis**: Automatically extracts and matches technical skills
