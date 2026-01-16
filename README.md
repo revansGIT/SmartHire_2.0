@@ -1,4 +1,4 @@
-# 🎯 SmartHire 2.0 - AI-Powered Resume Screening System
+# SmartHire 2.0 - AI-Powered Resume Screening System
 
 A production-ready web application that uses AI and machine learning to automatically screen and rank CVs/resumes against job descriptions. Built with React frontend and Flask backend.
 
