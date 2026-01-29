@@ -96,7 +96,7 @@ SmartHire_2.0/
    npm install
    ```
 
-3. **Configure environment** (optional):
+3. **Configure environment** (optional): 
    ```bash
    cp .env.example .env
    # Edit .env with your API URL
