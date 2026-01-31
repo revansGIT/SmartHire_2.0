@@ -1,4 +1,4 @@
-import os, json, threading, sqlite3, time, zipfile, re
+import os, json, threading, sqlite3, time, zipfile, re, shutil
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from contextlib import contextmanager
@@ -54,6 +54,40 @@ def get_db_connection():
         yield conn
     finally:
         conn.close()
+
+# --- Helper: Cleanup job files after processing ---
+def cleanup_job_files(job_id):
+    """
+    Clean up uploaded files and extracted CVs for a specific job.
+    This prevents storage issues on ephemeral file systems like Render's free tier.
+    
+    Args:
+        job_id: The job ID whose files should be cleaned up
+    """
+    job_dir = os.path.join(UPLOAD_FOLDER, str(job_id))
+    
+    if os.path.exists(job_dir):
+        try:
+            # Get directory size for logging
+            total_size = 0
+            for dirpath, dirnames, filenames in os.walk(job_dir):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.isfile(filepath):
+                        total_size += os.path.getsize(filepath)
+            
+            size_mb = total_size / (1024 * 1024)
+            
+            # Remove the entire job directory
+            shutil.rmtree(job_dir)
+            print(f"[CLEANUP] Successfully deleted job {job_id} files ({size_mb:.2f} MB freed)")
+            return True
+        except Exception as e:
+            print(f"[CLEANUP] Error deleting job {job_id} files: {e}")
+            return False
+    else:
+        print(f"[CLEANUP] No files found for job {job_id} (already cleaned or never created)")
+        return True
 
 # --- Helper: Extract all CV files from a directory recursively ---
 def find_cv_files(directory, extensions=None):
@@ -224,114 +258,120 @@ def score_candidate(job_desc, resume_text, must_haves, job_desc_lower=None, skil
 # --- 2. The Background Worker ---
 def process_job_thread(job_id, job_desc, cv_files, must_haves):
     """Optimized background processing with batching and caching"""
-    with get_db_connection() as conn:
-        c = conn.cursor()
-        
-        processed_count = 0
-        total_files = len(cv_files)
-        
-        print(f"\n=== Processing Job {job_id} ===")
-        print(f"Job Description: {job_desc[:100]}...")
-        print(f"Must-have skills: {must_haves}")
-        print(f"Total CV files: {total_files}")
-        
-        c.execute("UPDATE jobs SET total_files=? WHERE id=?", (total_files, job_id))
-        conn.commit()
-        
-        # Pre-compute job description analysis for reuse (major optimization)
-        job_desc_lower = job_desc.lower()
-        skills_in_job_desc = set()
-        
-        print("Pre-computing job skills...")
-        for skill in SKILLS.keys():
-            if len(skill.strip()) > 1:
-                pattern = get_compiled_pattern(skill.lower())
-                if pattern.search(job_desc_lower):
-                    skills_in_job_desc.add(skill.lower())
-        
-        print(f"Found {len(skills_in_job_desc)} relevant skills in job description")
-        
-        scores_log = []
-        candidates_added = 0
-        
-        # Batch insert buffer for better database performance
-        batch_size = 100
-        candidate_batch = []
-        
-        for path in cv_files:
-            try:
-                filename = os.path.basename(path)
-                text = extract_text(path)
-                
-                if text and len(text) > 50:
-                    # Pass pre-computed values to avoid redundant work
-                    score, missing, found_skills = score_candidate(
-                        job_desc, text, must_haves, 
-                        job_desc_lower=job_desc_lower,
-                        skills_in_job_desc=skills_in_job_desc
-                    )
-                    
-                    # Log first 10 files with skill details
-                    if processed_count < 10:
-                        skill_preview = found_skills[:3] if found_skills else []
-                        print(f"[{processed_count+1}] {filename[:30]:30} Score: {score:5.1f} Skills: {skill_preview}")
-                        scores_log.append((filename, score, found_skills[:3]))
-                    
-                    # Add to batch buffer
-                    candidate_batch.append((
-                        job_id, filename, score, 
-                        json.dumps(missing), False, 
-                        json.dumps(found_skills)
-                    ))
-                    
-                    if score > 0:
-                        candidates_added += 1
-                
-                processed_count += 1
-                
-                # Batch insert every batch_size records
-                if len(candidate_batch) >= batch_size:
-                    c.executemany(
-                        """INSERT INTO candidates 
-                           (job_id, filename, score, missing_skills, is_shortlisted, found_skills) 
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        candidate_batch
-                    )
-                    conn.commit()
-                    candidate_batch = []
-                
-                # Update progress less frequently (every 50 files)
-                if processed_count % 50 == 0:
-                    c.execute("UPDATE jobs SET processed_files=? WHERE id=?", (processed_count, job_id))
-                    conn.commit()
-                    print(f"  Processed: {processed_count}/{total_files}")
-                    
-            except Exception as e:
-                print(f"Error processing {path}: {e}")
-        
-        # Insert any remaining candidates in batch
-        if candidate_batch:
-            c.executemany(
-                """INSERT INTO candidates 
-                   (job_id, filename, score, missing_skills, is_shortlisted, found_skills) 
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                candidate_batch
-            )
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            
+            processed_count = 0
+            total_files = len(cv_files)
+            
+            print(f"\n=== Processing Job {job_id} ===")
+            print(f"Job Description: {job_desc[:100]}...")
+            print(f"Must-have skills: {must_haves}")
+            print(f"Total CV files: {total_files}")
+            
+            c.execute("UPDATE jobs SET total_files=? WHERE id=?", (total_files, job_id))
             conn.commit()
+            
+            # Pre-compute job description analysis for reuse (major optimization)
+            job_desc_lower = job_desc.lower()
+            skills_in_job_desc = set()
+            
+            print("Pre-computing job skills...")
+            for skill in SKILLS.keys():
+                if len(skill.strip()) > 1:
+                    pattern = get_compiled_pattern(skill.lower())
+                    if pattern.search(job_desc_lower):
+                        skills_in_job_desc.add(skill.lower())
+            
+            print(f"Found {len(skills_in_job_desc)} relevant skills in job description")
+            
+            scores_log = []
+            candidates_added = 0
+            
+            # Batch insert buffer for better database performance
+            batch_size = 100
+            candidate_batch = []
+            
+            for path in cv_files:
+                try:
+                    filename = os.path.basename(path)
+                    text = extract_text(path)
+                    
+                    if text and len(text) > 50:
+                        # Pass pre-computed values to avoid redundant work
+                        score, missing, found_skills = score_candidate(
+                            job_desc, text, must_haves, 
+                            job_desc_lower=job_desc_lower,
+                            skills_in_job_desc=skills_in_job_desc
+                        )
+                        
+                        # Log first 10 files with skill details
+                        if processed_count < 10:
+                            skill_preview = found_skills[:3] if found_skills else []
+                            print(f"[{processed_count+1}] {filename[:30]:30} Score: {score:5.1f} Skills: {skill_preview}")
+                            scores_log.append((filename, score, found_skills[:3]))
+                        
+                        # Add to batch buffer
+                        candidate_batch.append((
+                            job_id, filename, score, 
+                            json.dumps(missing), False, 
+                            json.dumps(found_skills)
+                        ))
+                        
+                        if score > 0:
+                            candidates_added += 1
+                    
+                    processed_count += 1
+                    
+                    # Batch insert every batch_size records
+                    if len(candidate_batch) >= batch_size:
+                        c.executemany(
+                            """INSERT INTO candidates 
+                               (job_id, filename, score, missing_skills, is_shortlisted, found_skills) 
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            candidate_batch
+                        )
+                        conn.commit()
+                        candidate_batch = []
+                    
+                    # Update progress less frequently (every 50 files)
+                    if processed_count % 50 == 0:
+                        c.execute("UPDATE jobs SET processed_files=? WHERE id=?", (processed_count, job_id))
+                        conn.commit()
+                        print(f"  Processed: {processed_count}/{total_files}")
+                        
+                except Exception as e:
+                    print(f"Error processing {path}: {e}")
+            
+            # Insert any remaining candidates in batch
+            if candidate_batch:
+                c.executemany(
+                    """INSERT INTO candidates 
+                       (job_id, filename, score, missing_skills, is_shortlisted, found_skills) 
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    candidate_batch
+                )
+                conn.commit()
 
-        print(f"\n=== Job {job_id} Summary ===")
-        print(f"Total processed: {processed_count}")
-        print(f"Candidates saved: {candidates_added}")
+            print(f"\n=== Job {job_id} Summary ===")
+            print(f"Total processed: {processed_count}")
+            print(f"Candidates saved: {candidates_added}")
+            
+            # Show skill distribution in top samples
+            print("\nSample skill matches:")
+            for filename, score, skills in scores_log[:5]:
+                print(f"  {filename[:20]}: {score:5.1f} - Skills: {skills}")
+            
+            c.execute("UPDATE jobs SET status='Completed', processed_files=? WHERE id=?", (processed_count, job_id))
+            conn.commit()
         
-        # Show skill distribution in top samples
-        print("\nSample skill matches:")
-        for filename, score, skills in scores_log[:5]:
-            print(f"  {filename[:20]}: {score:5.1f} - Skills: {skills}")
+        print(f"Job {job_id} Completed.\n")
         
-        c.execute("UPDATE jobs SET status='Completed', processed_files=? WHERE id=?", (processed_count, job_id))
-        conn.commit()
-    
-    print(f"Job {job_id} Completed.\n")
+    finally:
+        # Clean up files regardless of success or failure
+        print(f"[CLEANUP] Starting cleanup for job {job_id}...")
+        cleanup_job_files(job_id)
 
 # --- 3. API Endpoints ---
 @app.route('/upload-zip', methods=['POST'])
