@@ -73,8 +73,7 @@ def cleanup_job_files(job_id):
             for dirpath, dirnames, filenames in os.walk(job_dir):
                 for filename in filenames:
                     filepath = os.path.join(dirpath, filename)
-                    if os.path.isfile(filepath):
-                        total_size += os.path.getsize(filepath)
+                    total_size += os.path.getsize(filepath)
             
             size_mb = total_size / (1024 * 1024)
             
