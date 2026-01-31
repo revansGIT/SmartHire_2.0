@@ -16,7 +16,6 @@ build/
 uploads/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -29,6 +28,4 @@ frontend/build/
 .DS_Store
 
 # Environment variables
-.env
-.env.local
-.env.production
+config.bat
