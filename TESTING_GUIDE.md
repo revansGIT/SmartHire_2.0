@@ -37,7 +37,6 @@ python app.py
 
 # In another terminal, upload a test ZIP
 # (Use the frontend or curl to POST to /upload-zip)
-
 # Check logs for cleanup message:
 # [CLEANUP] Successfully deleted job X files (Y MB freed)
 ```
