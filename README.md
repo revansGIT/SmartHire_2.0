@@ -23,7 +23,7 @@ SmartHire_2.0/
 │   ├── src/
 │   │   ├── App.jsx       # Main application component
 │   │   ├── App.css       # Styles and responsive design
-│   │   └── main.jsx      # Application entry point
+│   │   └── main.jsx      
 │   ├── package.json
 │   └── vite.config.js
 │
